@@ -8,5 +8,5 @@ declare module "fastify" {
 }
 
 export async function prismaPlugin(fastify: FastifyInstance) {
-  fastify.decorateRequest("db", db);
+  fastify.decorate("db", db);
 }
