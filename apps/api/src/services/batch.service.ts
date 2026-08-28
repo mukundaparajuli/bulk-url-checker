@@ -1,4 +1,5 @@
 import { db } from "@repo/db";
+import { enqueueBatch } from "./queue.service";
 
 export async function createBatch(urls: string[]) {
   const batch = await db.transaction(async (tx) => {
@@ -19,6 +20,9 @@ export async function createBatch(urls: string[]) {
     });
     return created;
   });
+
+  await enqueueBatch(batch.id);
+
   return batch;
 }
 
