@@ -29,6 +29,51 @@ services:
       timeout: 3s
       retries: 5
 
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/urlchecker
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    command: node dist/server.js
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/urlchecker
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    command: node dist/worker.js
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
