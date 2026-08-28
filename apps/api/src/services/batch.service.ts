@@ -2,7 +2,7 @@ import { db } from "@repo/db";
 
 export async function createBatch(urls: string[]) {
   const batch = await db.transaction(async (tx) => {
-    const created = await tx.batch.create({
+    const created = await (tx as any).batch.create({
       data: {
         status: "PENDING",
         totalUrls: urls.length,
@@ -23,13 +23,13 @@ export async function createBatch(urls: string[]) {
 }
 
 export async function getBatches() {
-  return await db.batch.findMany({
+  return await (db as any).batch.findMany({
     orderBy: { createdAt: "desc" },
   });
 }
 
 export async function getBatchById(id: string) {
-  return await db.batch.findUnique({
+  return await (db as any).batch.findUnique({
     where: { id },
     include: { urls: true },
   });
