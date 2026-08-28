@@ -1,21 +1,47 @@
 // use prisma-next
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  username  String?
-  name      String?
-  posts     Post[]
-  createdAt TimestamptzString @default(now())
-  updatedAt temporal.updatedAtString()
+enum BatchStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  CANCELLED
 }
 
-model Post {
-  id        Int      @id @default(autoincrement())
-  title     String
-  content   String?
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
-  createdAt TimestamptzString @default(now())
-  updatedAt temporal.updatedAtString()
+enum UrlStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model Batch {
+  id             String      @id @default(uuid())
+  status         BatchStatus @default(PENDING)
+  totalUrls      Int         @default(0)
+  completedUrls  Int         @default(0)
+  failedUrls     Int         @default(0)
+  cancelledUrls  Int         @default(0)
+  createdAt      TimestamptzString @default(now())
+  updatedAt      temporal.updatedAtString()
+  urls           BatchUrl[]
+  @@index([createdAt])
+}
+
+model BatchUrl {
+  id             String    @id @default(uuid())
+  batchId        String
+  batch          Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  url            String
+  status         UrlStatus @default(PENDING)
+  httpStatus     Int?
+  responseTimeMs Int?
+  pageTitle      String?
+  error          String?
+  attempts       Int       @default(0)
+  createdAt      TimestamptzString @default(now())
+  updatedAt      temporal.updatedAtString()
+  @@index([batchId])
+  @@index([batchId, status])
 }
