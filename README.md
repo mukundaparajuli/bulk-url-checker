@@ -222,7 +222,7 @@ bulk-url-checker/
 
 ```bash
 # Clone and install
-git clone <repo-url> && cd bulk-url-checker
+git clone https://github.com/mukundaparajuli/bulk-url-checker.git && cd bulk-url-checker
 npm install
 
 # Start infrastructure
