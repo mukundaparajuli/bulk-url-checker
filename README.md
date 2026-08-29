@@ -228,8 +228,12 @@ npm install
 # Start infrastructure
 docker compose up -d postgres redis
 
-# Set up database
+# Set up environment
 cp .env.example .env
+cp .env.example apps/api/.env
+cp .env.example apps/worker/.env
+
+# Set up database
 cd packages/db
 npx prisma db update --confirm urlchecker
 cd ../..
