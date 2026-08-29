@@ -7,6 +7,16 @@ export interface CheckResult {
   finalUrl: string;
 }
 
+export class HttpError extends Error {
+  constructor(
+    public statusCode: number,
+    url: string,
+  ) {
+    super(`HTTP ${statusCode} for ${url}`);
+    this.name = "HttpError";
+  }
+}
+
 export async function checkUrl(url: string): Promise<CheckResult> {
   const start = Date.now();
 
@@ -19,6 +29,10 @@ export async function checkUrl(url: string): Promise<CheckResult> {
   });
 
   const responseTimeMs = Date.now() - start;
+
+  if (response.status >= 500) {
+    throw new HttpError(response.status, url);
+  }
 
   const html = await response.text();
 
