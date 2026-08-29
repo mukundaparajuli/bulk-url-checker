@@ -22,27 +22,138 @@ A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, 
 ## Architecture
 
 ```
-┌─────────┐      ┌─────────┐      ┌──────────┐
-│   Web   │─────▶│   API   │─────▶│ Worker×N │
-│ (Next)  │ SSE  │(Fastify)│      │ (BullMQ) │
-└─────────┘      └────┬────┘      └────┬─────┘
-                      │                │
-               ┌──────┴──────┐   ┌─────▼─────┐
-               │      │      │   │           │
-          ┌────▼──┐ ┌─▼───┐ ┌▼────┐    ┌────▼───┐
-          │Postgres│ │Redis│ │Redis│    │ Redis  │
-          │  (DB)  │ │Cache│ │PubSub│   │(Queue) │
-          └───────┘ └─────┘ └─────┘    └────────┘
+                          ┌─────────────────────────────────────────────┐
+                          │                  Browser                    │
+                          │                                             │
+                          │  ┌───────────────────────────────────────┐  │
+                          │  │            Next.js Frontend           │  │
+                          │  │                                       │  │
+                          │  │  /             → URL input + CSV      │  │
+                          │  │  /batches      → batch list           │  │
+                          │  │  /batches/:id  → live progress (SSE)  │  │
+                          │  └──────────────────┬────────────────────┘  │
+                          └─────────────────────┼───────────────────────┘
+                                                │
+                                    HTTP / SSE  │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Fastify API (:4000)                            │
+│                                                                             │
+│  POST /api/batches          → create batch + enqueue jobs                   │
+│  GET  /api/batches          → list batches (Redis cached, 30s TTL)          │
+│  GET  /api/batches/:id      → batch detail + urls                           │
+│  POST /api/batches/:id/cancel     → cancel batch                            │
+│  POST /api/batches/:id/retry-failed → re-queue failed URLs                  │
+│  GET  /api/batches/:id/events → SSE stream (subscribe to Redis Pub/Sub)     │
+│                                                                             │
+│  ┌──────────┐   ┌──────────┐   ┌───────────┐    ┌────────────────────────┐  │
+│  │  Routes  │──▶│Controller│──▶│  Service  │──▶ │ Pub/Sub (subscriber)   │  │
+│  └──────────┘   └──────────┘   └─────┬─────┘    └───────────┬────────────┘  │
+│                                      │                      │               │
+│                                      ▼                      │               │
+│                              ┌──────────────┐               │               │
+│                              │  Queue.add() │               │               │
+│                              └──────┬───────┘               │               │
+└─────────────────────────────────────┼───────────────────────┼───────────────┘
+                                      │                       │
+                               enqueue│              subscribe│
+                                      ▼                       │
+┌─────────────────────────────────────────────────────────────┼───────────────┐
+│                          Redis                              │               │
+│                                                             │               │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐               │
+│  │   Queue     │  │   Pub/Sub    │  │       Cache           │               │
+│  │ (BullMQ)    │  │              │  │ (batch list, 30s TTL) │               │
+│  │             │  │  channel:    │  │                       │               │
+│  │  wait queue │  │  batch-events│  │                       │               │
+│  │  active set │  │              │  │                       │               │
+│  └──────┬──────┘  └───────▲──────┘  └───────────────────────┘               │
+└─────────┼─────────────────┼─────────────────────────────────────────────────┘
+          │                 │ publish
+          │ pick up         │
+          ▼                 │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Worker × N  (BullMQ)                              │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  processCheckUrl(job)                                                 │  │
+│  │                                                                       │  │
+│  │  1. Check batch not cancelled                                         │  │
+│  │  2. Mark url PROCESSING                                               │  │
+│  │  3. fetch(url, { timeout: 10s }) → { status, responseTime, title }    │  │
+│  │  4. Mark url SUCCESS or FAILED (retry 3x, exponential backoff)        │  │
+│  │  5. Update batch progress (recount all url statuses)                  │  │
+│  │  6. Publish event to Redis Pub/Sub                                    │  │
+│  │                                                                       │  │
+│  │  concurrency: 5  ·  rate limit: 10 jobs/sec  ·  attempts: 3           │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────┬──────────────────────────────────┘
+                                           │
+                                    read/write
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          PostgreSQL (:5432)                                 │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  batch                                                                │  │
+│  │  ──────                                                               │  │
+│  │  id (uuid PK)  ·  status (PENDING|RUNNING|COMPLETED|FAILED|CANCELLED) │  │
+│  │  totalUrls  ·  completedUrls  ·  failedUrls  ·  cancelledUrls         │  │
+│  │  createdAt  ·  updatedAt                                              │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  batchUrl                                                             │  │
+│  │  ────────                                                             │  │
+│  │  id (uuid PK)  ·  batchId (uuid FK → batch)  ·  url (text)            │  │
+│  │  status (PENDING|QUEUED|PROCESSING|SUCCESS|FAILED|CANCELLED)          │  │
+│  │  httpStatus (int?)  ·  responseTimeMs (int?)  ·  pageTitle (text?)    │  │
+│  │  error (text?)  ·  attempts (int)  ·  createdAt  ·  updatedAt         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Request flow:**
+**Data flow:**
 
-1. User submits URLs via the web UI
-2. API creates a batch in PostgreSQL, enqueues jobs in Redis
-3. Workers pick up jobs, fetch each URL, extract HTTP status + page title
-4. Workers update PostgreSQL and publish events via Redis Pub/Sub
-5. API subscribes to Redis, forwards events to the frontend via SSE
-6. Frontend re-fetches batch data on each event, updating the UI in real-time
+```
+User                    API                     Redis                   Worker                PostgreSQL
+ │                       │                       │                       │                       │
+ │  1. POST /batches     │                       │                       │                       │
+ │  { urls: [...] }      │                       │                       │                       │
+ ├──────────────────────▶│                       │                       │                       │
+ │                       │  2. INSERT batch      │                       │                       │
+ │                       │     + batchUrl rows   │                       │                       │
+ │                       ├──────────────────────────────────────────────────────────────────────▶│
+ │                       │                       │                       │                       │
+ │                       │  3. queue.add()       │                       │                       │
+ │                       │     for each url      │                       │                       │
+ │                       ├──────────────────────▶│                       │                       │
+ │                       │                       │                       │                       │
+ │  4. { id: batchId }   │                       │                       │                       │
+ │◀──────────────────────┤                       │                       │                       │
+ │                       │                       │                       │                       │
+ │                       │                       │  5. worker picks job  │                       │
+ │                       │                       ├──────────────────────▶│                       │
+ │                       │                       │                       │                       │
+ │                       │                       │                       │  6. UPDATE url status │
+ │                       │                       │                       ├──────────────────────▶│
+ │                       │                       │                       │                       │
+ │                       │                       │  7. publish event     │                       │
+ │                       │                       │◀──────────────────────┤                       │
+ │                       │                       │                       │                       │
+ │  8. SSE event         │                       │                       │                       │
+ │  (via subscriber)     │                       │                       │                       │
+ │◀──────────────────────┤◀──────────────────────┤                       │                       │
+ │                       │                       │                       │                       │
+ │  9. GET /batches/:id  │                       │                       │                       │
+ ├──────────────────────▶│                       │                       │                       │
+ │                       │  10. SELECT batch     │                       │                       │
+ │                       ├──────────────────────────────────────────────────────────────────────▶│
+ │                       │                       │                       │                       │
+ │  11. batch + urls     │                       │                       │                       │
+ │◀──────────────────────┤                       │                       │                       │
+ │                       │                       │                       │                       │
+```
 
 ---
 
