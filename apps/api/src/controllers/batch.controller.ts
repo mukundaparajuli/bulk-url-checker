@@ -6,7 +6,7 @@ import {
   cancelBatch,
   retryFailedUrls,
 } from "../services/batch.service";
-import { addClient } from "../services/pubsub.service";
+import { addClient, removeClient } from "../services/pubsub.service";
 
 export async function createBatchController(request: FastifyRequest, reply: FastifyReply) {
   const { urls } = request.body as { urls: string[] };
@@ -47,13 +47,25 @@ export async function batchEventsController(request: FastifyRequest, reply: Fast
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
+    "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "http://localhost:3000",
+    "Access-Control-Allow-Credentials": "true",
   });
 
   reply.raw.write(`data: ${JSON.stringify({ type: "connected", batchId: id })}\n\n`);
 
   addClient(id, reply);
 
+  const heartbeat = setInterval(() => {
+    if (reply.raw.writable) {
+      reply.raw.write(":keepalive\n\n");
+    }
+  }, 15_000);
+
   request.raw.on("close", () => {
-    reply.raw.end();
+    clearInterval(heartbeat);
+    removeClient(id, reply);
+    if (!reply.raw.destroyed) {
+      reply.raw.end();
+    }
   });
 }

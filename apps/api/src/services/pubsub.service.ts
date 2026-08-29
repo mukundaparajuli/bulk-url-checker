@@ -15,7 +15,18 @@ subscriber.on("message", (_channel, message) => {
       const set = clients.get(event.batchId);
       if (set) {
         for (const reply of set) {
-          reply.raw.write(`data: ${message}\n\n`);
+          if (reply.raw.writable) {
+            try {
+              reply.raw.write(`data: ${message}\n\n`);
+            } catch {
+              set.delete(reply);
+            }
+          } else {
+            set.delete(reply);
+          }
+        }
+        if (set.size === 0) {
+          clients.delete(event.batchId);
         }
       }
     }
@@ -29,14 +40,14 @@ export function addClient(batchId: string, reply: FastifyReply) {
     clients.set(batchId, new Set());
   }
   clients.get(batchId)!.add(reply);
+}
 
-  reply.raw.on("close", () => {
-    const set = clients.get(batchId);
-    if (set) {
-      set.delete(reply);
-      if (set.size === 0) {
-        clients.delete(batchId);
-      }
+export function removeClient(batchId: string, reply: FastifyReply) {
+  const set = clients.get(batchId);
+  if (set) {
+    set.delete(reply);
+    if (set.size === 0) {
+      clients.delete(batchId);
     }
-  });
+  }
 }

@@ -3,7 +3,7 @@ import { processCheckUrl } from "./processors/check-url.processor";
 import { env } from "./config/env";
 import { db } from "@repo/db";
 
-db.connect({ url: env.databaseUrl });
+db.connect();
 
 const worker = new Worker(
   "url-checks",
