@@ -9,7 +9,10 @@
     "check-types": "turbo run check-types",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
-    "docker:build": "docker compose build"
+    "docker:build": "docker compose build",
+    "docker:prod": "docker compose -f docker-compose.prod.yml up --build -d",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f"
   },
   "devDependencies": {
     "prettier": "3.9.6",

@@ -62,6 +62,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/urlchecker
       REDIS_URL: redis://redis:6379
     restart: unless-stopped
+    deploy:
+      replicas: 3
     networks:
       - backend
 

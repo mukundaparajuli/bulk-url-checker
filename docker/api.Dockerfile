@@ -1,19 +1,29 @@
-FROM node:24-alpine AS deps
+FROM node:24-alpine AS base
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
+
+FROM base AS deps
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/db/package.json packages/db/
-RUN npm install
+RUN npm ci --omit=dev
 
-FROM node:24-alpine AS builder
-WORKDIR /app
+FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build --workspace=@repo/api
+RUN npm run build --workspace=@repo/db
 
-FROM node:24-alpine AS runner
-WORKDIR /app
+FROM base AS runner
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 appuser
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/db/src/prisma/contract.json ./node_modules/@repo/db/src/prisma/contract.json
+COPY --from=builder /app/packages/db/src/prisma/contract.d.ts ./node_modules/@repo/db/src/prisma/contract.d.ts
 COPY --from=builder /app/apps/api/package.json ./package.json
+
+USER appuser
+EXPOSE 4000
 CMD ["node", "dist/server.js"]

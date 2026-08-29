@@ -1,159 +1,436 @@
-# Turborepo starter
+# Bulk URL Health Checker
 
-This Turborepo starter is maintained by the Turborepo core team.
+A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, and get real-time status updates with HTTP codes, response times, and page titles.
 
-## Using this example
+---
 
-Run the following command:
+## Features
 
-```sh
-npx create-turbo@latest
+- **Bulk URL checking** — check hundreds of URLs concurrently
+- **CSV upload** — drag-and-drop or file picker for CSV/text files
+- **CSV export** — download results from any batch
+- **Real-time updates** — SSE-powered live progress bar with shimmer animation
+- **Retry failed** — re-queue failed URLs with one click
+- **Cancel batches** — stop processing mid-batch
+- **Multiple workers** — horizontal scaling via BullMQ job distribution
+- **Redis caching** — batch list cached with 30s TTL
+- **Idempotent processing** — safe against duplicate job execution
+- **Production Docker** — multi-stage builds, non-root containers, replica workers
+
+---
+
+## Architecture
+
+```
+┌─────────┐      ┌─────────┐      ┌──────────┐
+│   Web   │─────▶│   API   │─────▶│ Worker×N │
+│ (Next)  │ SSE  │(Fastify)│      │ (BullMQ) │
+└─────────┘      └────┬────┘      └────┬─────┘
+                      │                │
+               ┌──────┴──────┐   ┌─────▼─────┐
+               │      │      │   │           │
+          ┌────▼──┐ ┌─▼───┐ ┌▼────┐    ┌────▼───┐
+          │Postgres│ │Redis│ │Redis│    │ Redis  │
+          │  (DB)  │ │Cache│ │PubSub│   │(Queue) │
+          └───────┘ └─────┘ └─────┘    └────────┘
 ```
 
-## What's inside?
+**Request flow:**
 
-This Turborepo includes the following packages/apps:
+1. User submits URLs via the web UI
+2. API creates a batch in PostgreSQL, enqueues jobs in Redis
+3. Workers pick up jobs, fetch each URL, extract HTTP status + page title
+4. Workers update PostgreSQL and publish events via Redis Pub/Sub
+5. API subscribes to Redis, forwards events to the frontend via SSE
+6. Frontend re-fetches batch data on each event, updating the UI in real-time
 
-### Apps and Packages
+---
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+## Tech Stack
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | Next.js 16, Ant Design | UI with neobrutalist styling |
+| Real-time | Server-Sent Events | Live progress updates |
+| API | Fastify 5 | REST endpoints, CORS, SSE |
+| Worker | BullMQ, Cheerio | Job processing, HTML parsing |
+| Database | PostgreSQL 16 | Batch and URL storage |
+| ORM | Prisma v8 (`@prisma/orm-postgres`) | Type-safe database access |
+| Queue | Redis 7 + BullMQ | Job queuing with retries |
+| Cache | Redis (ioredis) | Batch list caching |
+| Infra | Docker, Turborepo | Containerization, monorepo |
 
-### Utilities
+---
 
-This Turborepo has some additional tools already setup for you:
+## Project Structure
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+bulk-url-checker/
+├── apps/
+│   ├── api/                    # Fastify REST API
+│   │   └── src/
+│   │       ├── config/         # Environment config
+│   │       ├── controllers/    # Route handlers
+│   │       ├── plugins/        # Prisma plugin
+│   │       ├── routes/         # Route definitions
+│   │       └── services/       # Business logic, cache, pubsub, queue
+│   ├── worker/                 # BullMQ job processor
+│   │   └── src/
+│   │       ├── config/         # Environment config
+│   │       ├── processors/     # Job handlers
+│   │       └── services/       # URL checker, state management, events
+│   └── web/                    # Next.js frontend
+│       └── app/
+│           ├── page.tsx                # Home: URL input + CSV upload
+│           ├── batches/page.tsx        # Batch list
+│           └── batches/[id]/
+│               ├── page.tsx            # Server-side data fetch
+│               └── BatchClient.tsx     # SSE + interactive UI
+├── packages/
+│   └── db/                     # Prisma v8 ORM + contract schema
+├── docker/                     # Dockerfiles (api, worker, web)
+├── docker-compose.yml          # Development compose
+├── docker-compose.prod.yml     # Production compose (3 worker replicas)
+└── turbo.json                  # Turborepo task config
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo build
-npm exec turbo build
-npm exec turbo build
+## Running Locally
+
+### Prerequisites
+
+- Node.js >= 24
+- PostgreSQL 16
+- Redis 7
+- npm
+
+### Quick Start
+
+```bash
+# Clone and install
+git clone <repo-url> && cd bulk-url-checker
+npm install
+
+# Start infrastructure
+docker compose up -d postgres redis
+
+# Set up database
+cp .env.example .env
+cd packages/db
+npx prisma db update --confirm urlchecker
+cd ../..
+
+# Start all services (API + Worker + Web)
+npm run dev
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+- **Web:** http://localhost:3000
+- **API:** http://localhost:4000
+- **Health:** http://localhost:4000/health
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+### Individual Services
 
-```sh
-turbo build --filter=docs
+```bash
+# API only
+cd apps/api && npm run dev
+
+# Worker only
+cd apps/worker && npm run dev
+
+# Web only
+cd apps/web && npm run dev
 ```
 
-Without global `turbo`:
+### Docker
 
-```sh
-npx turbo build --filter=docs
-npm exec turbo build --filter=docs
-npm exec turbo build --filter=docs
+```bash
+# Build and start everything
+docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
 ```
 
-### Develop
+### Production (Multiple Workers)
 
-To develop all apps and packages, run the following command:
+```bash
+# Start with 3 worker replicas
+docker compose -f docker-compose.prod.yml up -d --build
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+# Scale workers on the fly
+docker compose up -d --scale worker=5
 
-```sh
-cd my-turborepo
-turbo dev
+# Check running containers
+docker compose ps
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo dev
-npm exec turbo dev
-npm exec turbo dev
+## Environment Variables
+
+| Variable | Default | Used By | Description |
+|----------|---------|---------|-------------|
+| `DATABASE_URL` | — | API, Worker | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379` | API, Worker | Redis connection string |
+| `CORS_ORIGIN` | `http://localhost:3000` | API | Allowed CORS origin for the frontend |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | Web | API URL for client-side requests |
+
+---
+
+## Database
+
+### Schema
+
+Two tables via Prisma v8 contract system:
+
+**`batch`** — tracks a group of URL checks
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `status` | Enum | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED` |
+| `totalUrls` | Int | Total URLs in batch |
+| `completedUrls` | Int | Successfully checked |
+| `failedUrls` | Int | Failed after all retries |
+| `cancelledUrls` | Int | Cancelled by user |
+| `createdAt` | Timestamptz | Creation timestamp |
+| `updatedAt` | Timestamptz | Last update timestamp |
+
+**`batchUrl`** — individual URL check results
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `batchId` | UUID | Foreign key to `batch` |
+| `url` | Text | URL to check |
+| `status` | Enum | `PENDING`, `QUEUED`, `PROCESSING`, `SUCCESS`, `FAILED`, `CANCELLED` |
+| `httpStatus` | Int? | HTTP response code |
+| `responseTimeMs` | Int? | Response time in milliseconds |
+| `pageTitle` | Text? | Extracted `<title>` tag |
+| `error` | Text? | Error message if failed |
+| `attempts` | Int | Number of processing attempts |
+
+### Migrations
+
+```bash
+cd packages/db
+npx prisma contract emit          # Regenerate contract after schema changes
+npx prisma db update --confirm urlchecker  # Apply schema changes to database
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Background Processing
 
-```sh
-turbo dev --filter=web
+### Job Lifecycle
+
+```
+PENDING → QUEUED → PROCESSING → SUCCESS
+                              → FAILED (after 3 attempts)
+         QUEUED → PROCESSING → CANCELLED (if batch cancelled)
 ```
 
-Without global `turbo`:
+1. **Enqueue:** API creates `BatchUrl` rows with status `PENDING`, then adds BullMQ jobs
+2. **Pick up:** Worker picks up job, marks URL as `PROCESSING`
+3. **Check:** Worker fetches URL with 10s timeout, extracts HTTP status + page title
+4. **Complete:** Worker marks URL as `SUCCESS` or `FAILED`, updates batch progress
+5. **Publish:** Worker publishes event to Redis Pub/Sub, API forwards via SSE
 
-```sh
-npx turbo dev --filter=web
-npm exec turbo dev --filter=web
-npm exec turbo dev --filter=web
+### URL Checker
+
+- Uses `fetch()` with `AbortSignal.timeout(10_000)` (10 second timeout)
+- Follows redirects automatically (`redirect: "follow"`)
+- Extracts page title via Cheerio HTML parser
+- Throws `HttpError` for 5xx responses (triggers retry)
+- Returns `{ status, responseTimeMs, pageTitle, finalUrl }`
+
+---
+
+## Rate Limiting
+
+BullMQ worker-level rate limiter:
+
+```typescript
+limiter: {
+  max: 10,        // max 10 jobs
+  duration: 1000, // per 1 second
+}
 ```
 
-### Remote Caching
+This prevents overwhelming target servers. Each worker processes up to 10 URLs/second. With 3 workers, the system handles up to 30 URLs/second.
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+---
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+## Concurrency
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+Each worker processes **5 jobs concurrently** (`concurrency: 5`). With N workers:
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+| Workers | Concurrent Jobs | Max URLs/sec |
+|---------|----------------|--------------|
+| 1 | 5 | 10 |
+| 3 | 15 | 30 |
+| 5 | 25 | 50 |
 
-```sh
-cd my-turborepo
-turbo login
+BullMQ distributes jobs round-robin across workers automatically. No configuration needed — just add more worker instances.
+
+---
+
+## Retries
+
+- **3 attempts** per URL
+- **Exponential backoff:** 1s → 2s → 4s delay between retries
+- **Retryable errors:** network errors, timeouts, 5xx status codes
+- **Non-retryable errors:** 4xx client errors (handled on final attempt)
+
+```typescript
+{
+  attempts: 3,
+  backoff: { type: "exponential", delay: 1000 }
+}
 ```
 
-Without global `turbo`, use your package manager:
+After all retries exhaust, the URL is marked `FAILED` in the database. Users can manually retry via the "Retry Failed" button.
 
-```sh
-cd my-turborepo
-npx turbo login
-npm exec turbo login
-npm exec turbo login
+---
+
+## Idempotency
+
+Every state transition checks the current status before updating:
+
+```typescript
+// Won't overwrite a terminal state
+if (item.status === "SUCCESS" || item.status === "FAILED" || item.status === "CANCELLED") return;
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+This prevents:
+- Race conditions between concurrent workers
+- Duplicate processing from BullMQ retries
+- Stale writes overwriting newer results
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+Job IDs are deterministic (`check-url-{uuid}`) so BullMQ won't create duplicates for the same URL.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+---
 
-```sh
-turbo link
+## Cancellation
+
+When a user cancels a batch:
+
+1. Batch status is set to `CANCELLED`
+2. All `PENDING` and `QUEUED` URLs are marked `CANCELLED`
+3. BullMQ jobs are removed from the queue
+4. In-progress jobs check `isBatchCancelled()` before writing results
+
+The check happens both before and after the HTTP request:
+
+```typescript
+if (await isBatchCancelled(batchId)) {
+  await markCancelled(batchUrlId);
+  return;
+}
 ```
 
-Without global `turbo`:
+---
 
-```sh
-npx turbo link
-npm exec turbo link
-npm exec turbo link
+## Live Updates
+
+### Server-Sent Events (SSE)
+
+1. Frontend opens `EventSource` to `GET /api/batches/:id/events`
+2. API sends `connected` event immediately
+3. API subscribes to Redis channel `batch-events`
+4. When a worker publishes an update, API forwards it to connected clients
+5. Frontend calls `fetchLatest()` on each event to re-render
+
+### Keepalive
+
+SSE connections send a `:keepalive\n\n` comment every 15 seconds to prevent proxy/browser timeouts.
+
+### Frontend Indicators
+
+- **Progress bar** with shimmer animation during processing
+- **Pulsing blue dot** next to status when batch is active
+- **Live/Reconnecting** indicator showing SSE connection state
+
+---
+
+## Caching
+
+Redis cache for `GET /api/batches`:
+
+- **Key:** `cache:batches:list`
+- **TTL:** 30 seconds
+- **Invalidation:** on batch create, cancel, or retry
+
+```typescript
+const cached = await redis.get("cache:batches:list");
+if (cached) return JSON.parse(cached);
+
+const batches = await Batch.orderBy(m => m.createdAt.desc()).all();
+await redis.set("cache:batches:list", JSON.stringify(batches), "EX", 30);
 ```
 
-## Useful Links
+Individual batch fetches (`GET /api/batches/:id`) are not cached — they always hit the database to ensure fresh URL statuses.
 
-Learn more about the power of Turborepo:
+---
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+## Horizontal Scaling
+
+### Adding Workers
+
+```bash
+# Docker Compose
+docker compose up -d --scale worker=5
+
+# Or edit docker-compose.prod.yml
+worker:
+  deploy:
+    replicas: 5
+```
+
+BullMQ automatically distributes jobs across all connected workers. No code changes needed.
+
+### Worker Isolation
+
+Each worker:
+- Has its own PostgreSQL connection
+- Has its own Redis connection
+- Processes jobs independently
+- Can be restarted/crashed without affecting others
+
+### What Scales
+
+| Component | Scaling Method |
+|-----------|---------------|
+| Workers | Add replicas (BullMQ handles distribution) |
+| API | Add replicas behind a load balancer |
+| PostgreSQL | Vertical scaling (single writer) |
+| Redis | Vertical scaling (single instance for queue + cache) |
+
+---
+
+## Tradeoffs
+
+### What was chosen
+
+- **Prisma v8 ORM** over `@prisma/client` — contract-based system with lazy Proxy collections, but immature types require `(model as any)` casts for some operations
+- **SSE over WebSocket** — simpler, auto-reconnects, no connection management needed. Sufficient for unidirectional server→client updates
+- **Redis for both queue and cache** — single dependency, but cache invalidation is manual and TTL-based
+- **BullMQ over custom queue** — battle-tested, handles retries/backoff/concurrency/distribution out of the box
+- **Cheerio for HTML parsing** — lightweight, no browser needed, extracts `<title>` tag only
+- **10s timeout per URL** — balances between slow sites and overall batch speed
+
+### Known limitations
+
+- **Single PostgreSQL writer** — no read replicas or horizontal DB scaling
+- **No authentication** — anyone can create/cancel batches
+- **CSV parser is simple** — handles basic `url` column detection but not complex quoted fields
+- **No deduplication across batches** — same URL can be checked in multiple batches
+- **Cache invalidation is coarse** — full cache clear on any batch mutation
+- **No persistent SSE history** — if client disconnects, events during disconnect are lost
+
+---
+
