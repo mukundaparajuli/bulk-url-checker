@@ -1,102 +1,187 @@
-import Image, { type ImageProps } from "next/image";
-import { Button } from "@repo/ui/button";
-import styles from "./page.module.css";
+"use client";
 
-type Props = Omit<ImageProps, "src"> & {
-  srcLight: string;
-  srcDark: string;
-};
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ConfigProvider, Button, Input, App } from "antd";
+import { createBatch } from "../lib/api";
 
-const ThemeImage = (props: Props) => {
-  const { srcLight, srcDark, ...rest } = props;
-
-  return (
-    <>
-      <Image {...rest} src={srcLight} className="imgLight" />
-      <Image {...rest} src={srcDark} className="imgDark" />
-    </>
-  );
+const theme = {
+  token: {
+    fontFamily: '"JetBrains Mono", monospace',
+    colorPrimary: "#000000",
+    colorSuccess: "#22c55e",
+    colorError: "#ef4444",
+    colorWarning: "#f59e0b",
+    borderRadius: 0,
+    fontSize: 14,
+  },
+  components: {
+    Button: {
+      borderRadius: 0,
+      controlHeight: 44,
+      paddingInline: 24,
+      fontWeight: 600,
+    },
+    Input: {
+      borderRadius: 0,
+      controlHeight: 44,
+      borderWidth: 3,
+    },
+    Table: {
+      borderRadius: 0,
+      headerBg: "#f5f5f5",
+      headerColor: "#000000",
+      headerFontWeight: 700,
+      cellPaddingBlock: 12,
+      cellPaddingInline: 16,
+      borderColor: "#000000",
+      rowHoverBg: "#f5f5f5",
+    },
+    Tag: {
+      borderRadiusSM: 0,
+      defaultBg: "transparent",
+    },
+    Progress: {
+      borderRadius: 0,
+    },
+  },
 };
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <ThemeImage
-          className={styles.logo}
-          srcLight="turborepo-dark.svg"
-          srcDark="turborepo-light.svg"
-          alt="Turborepo logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>apps/web/app/page.tsx</code>
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const router = useRouter();
+  const [urls, setUrls] = useState("");
+  const [loading, setLoading] = useState(false);
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new/clone?demo-description=Learn+to+implement+a+monorepo+with+a+two+Next.js+sites+that+has+installed+three+local+packages.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F4K8ZISWAzJ8X1504ca0zmC%2F0b21a1c6246add355e55816278ef54bc%2FBasic.png&demo-title=Monorepo+with+Turborepo&demo-url=https%3A%2F%2Fexamples-basic-web.vercel.sh%2F&from=templates&project-name=Monorepo+with+Turborepo&repository-name=monorepo-turborepo&repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fturborepo%2Ftree%2Fmain%2Fexamples%2Fbasic&root-directory=apps%2Fdocs&skippable-integrations=1&teamSlug=vercel&utm_source=create-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
+  const handleSubmit = async () => {
+    const parsed = urls
+      .split("\n")
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0);
+
+    if (parsed.length === 0) return;
+
+    setLoading(true);
+    try {
+      const { id } = await createBatch(parsed);
+      router.push(`/batches/${id}`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const urlCount = urls
+    .split("\n")
+    .filter((u) => u.trim().length > 0).length;
+
+  return (
+    <ConfigProvider theme={theme}>
+      <App>
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 640,
+              border: "3px solid #000",
+              boxShadow: "6px 6px 0 #000",
+              padding: 40,
+              background: "#fff",
+            }}
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+            <h1
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: -1,
+                marginBottom: 8,
+              }}
+            >
+              URL Checker
+            </h1>
+            <p
+              style={{
+                color: "#737373",
+                marginBottom: 32,
+                fontSize: 13,
+              }}
+            >
+              Enter URLs, one per line. Max 1000.
+            </p>
+
+            <Input.TextArea
+              rows={10}
+              placeholder={"https://example.com\nhttps://google.com\nhttps://github.com"}
+              value={urls}
+              onChange={(e) => setUrls(e.target.value)}
+              style={{
+                border: "3px solid #000",
+                boxShadow: "3px 3px 0 #000",
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: 13,
+                resize: "none",
+              }}
             />
-            Deploy now
-          </a>
-          <a
-            href="https://turborepo.dev/docs?utm_source"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 20,
+              }}
+            >
+              <span style={{ fontSize: 13, color: "#737373" }}>
+                {urlCount} URL{urlCount !== 1 ? "s" : ""}
+              </span>
+              <Button
+                type="primary"
+                onClick={handleSubmit}
+                loading={loading}
+                disabled={urlCount === 0}
+                style={{
+                  border: "3px solid #000",
+                  boxShadow: "3px 3px 0 #000",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  fontSize: 14,
+                }}
+              >
+                Check URLs
+              </Button>
+            </div>
+
+            <div
+              style={{
+                marginTop: 32,
+                paddingTop: 20,
+                borderTop: "2px solid #e5e5e5",
+              }}
+            >
+              <a
+                href="/batches"
+                style={{
+                  fontSize: 13,
+                  color: "#737373",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 4,
+                }}
+              >
+                View all batches →
+              </a>
+            </div>
+          </div>
         </div>
-        <Button appName="web" className={styles.secondary}>
-          Open alert
-        </Button>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com/templates?search=turborepo&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://turborepo.dev?utm_source=create-turbo"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to turborepo.dev →
-        </a>
-      </footer>
-    </div>
+      </App>
+    </ConfigProvider>
   );
 }
