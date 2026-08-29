@@ -526,10 +526,10 @@ Each worker:
 
 | Component | Scaling Method |
 |-----------|---------------|
-| Workers | Add replicas (BullMQ handles distribution) |
-| API | Add replicas behind a load balancer |
+| Workers | Add replicas (BullMQ handles distribution, global rate limit via Redis) |
+| API | Add replicas behind load balancer (SSE works via Redis Pub/Sub, cache invalidation via Redis) |
 | PostgreSQL | Vertical scaling (single writer) |
-| Redis | Vertical scaling (single instance for queue + cache) |
+| Redis | Vertical scaling (single instance for queue + cache + rate limit) |
 
 ---
 
@@ -537,6 +537,7 @@ Each worker:
 
 ### What was chosen
 
+- **Concurrency per-worker, rate limit global** — the requirement says "Concurrency: 5 checks in flight" (no "global" qualifier) but "Global rate limit: 10 requests/second across the entire system — not per URL, not per worker process." Interpreting this deliberately: concurrency scales with workers (5 each), rate limit is enforced globally via Redis sliding window
 - **Prisma v8 ORM** over `@prisma/client` — contract-based system with lazy Proxy collections, but immature types require `(model as any)` casts for some operations
 - **SSE over WebSocket** — simpler, auto-reconnects, no connection management needed. Sufficient for unidirectional server→client updates
 - **Redis for both queue and cache** — single dependency, but cache invalidation is manual and TTL-based
