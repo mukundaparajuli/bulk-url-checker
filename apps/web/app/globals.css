@@ -12,9 +12,6 @@
   --failed: #ef4444;
   --running: #3b82f6;
   --cancelled: #a3a3a3;
-  --border: 3px solid var(--black);
-  --shadow: 6px 6px 0 var(--black);
-  --shadow-sm: 3px 3px 0 var(--black);
 }
 
 * {

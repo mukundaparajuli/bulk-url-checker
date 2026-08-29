@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { FastifyReply } from "fastify";
+import type { BatchUpdatedEvent } from "@repo/shared";
 import { env } from "../config/env";
 
 const clients = new Map<string, Set<FastifyReply>>();
@@ -10,7 +11,7 @@ subscriber.subscribe("batch-events");
 
 subscriber.on("message", (_channel, message) => {
   try {
-    const event = JSON.parse(message);
+    const event: BatchUpdatedEvent = JSON.parse(message);
     if (event.type === "batch.updated" && event.batchId) {
       const set = clients.get(event.batchId);
       if (set) {

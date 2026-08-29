@@ -45,14 +45,6 @@ const urlStatusColors: Record<string, string> = {
   CANCELLED: "#a3a3a3",
 };
 
-const batchStatusColors: Record<string, string> = {
-  PENDING: "#a3a3a3",
-  RUNNING: "#3b82f6",
-  COMPLETED: "#22c55e",
-  FAILED: "#ef4444",
-  CANCELLED: "#a3a3a3",
-};
-
 function downloadCsv(data: BatchDetail) {
   const headers = ["url", "status", "httpStatus", "responseTimeMs", "pageTitle", "error"];
   const rows = data.urls.map((u) =>
@@ -347,7 +339,6 @@ export default function BatchClient({
                   fontWeight: 800,
                   textTransform: "uppercase",
                   letterSpacing: -0.5,
-                  fontFamily: '"JetBrains Mono", monospace',
                 }}
               >
                 Batch
@@ -355,9 +346,6 @@ export default function BatchClient({
               <code
                 style={{
                   fontSize: 12,
-                  background: "#f5f5f5",
-                  border: "2px solid #000",
-                  padding: "2px 8px",
                   display: "inline-block",
                   marginTop: 8,
                 }}

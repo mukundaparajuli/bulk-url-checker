@@ -1,4 +1,5 @@
 import { Batch, BatchUrl } from "@repo/db";
+import type { CheckResult } from "@repo/shared";
 
 export async function markProcessing(batchUrlId: string) {
   await BatchUrl.where({ id: batchUrlId, status: "PENDING" }).updateAll({
@@ -11,12 +12,7 @@ export async function markProcessing(batchUrlId: string) {
 
 export async function markSuccess(
   batchUrlId: string,
-  result: {
-    status: number;
-    responseTimeMs: number;
-    pageTitle: string | null;
-    finalUrl: string;
-  }
+  result: CheckResult
 ) {
   const item = await BatchUrl.where({ id: batchUrlId }).first();
   if (!item) return;

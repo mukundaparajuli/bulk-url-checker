@@ -22,20 +22,20 @@ A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, 
 ## Architecture
 
 ```
-                          ┌─────────────────────────────────────────────┐
-                          │                  Browser                    │
-                          │                                             │
-                          │  ┌───────────────────────────────────────┐  │
-                          │  │            Next.js Frontend           │  │
-                          │  │                                       │  │
-                          │  │  /             → URL input + CSV      │  │
-                          │  │  /batches      → batch list           │  │
-                          │  │  /batches/:id  → live progress (SSE)  │  │
-                          │  └──────────────────┬────────────────────┘  │
-                          └─────────────────────┼───────────────────────┘
-                                                │
-                                    HTTP / SSE  │
-                                                ▼
+              ┌─────────────────────────────────────────────┐
+              │                  Browser                    │
+              │                                             │
+              │  ┌───────────────────────────────────────┐  │
+              │  │            Next.js Frontend           │  │
+              │  │                                       │  │
+              │  │  /             → URL input + CSV      │  │
+              │  │  /batches      → batch list           │  │
+              │  │  /batches/:id  → live progress (SSE)  │  │
+              │  └──────────────────┬────────────────────┘  │
+              └─────────────────────┼───────────────────────┘
+                                    │
+                        HTTP / SSE  │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Fastify API (:4000)                            │
 │                                                                             │
@@ -57,18 +57,18 @@ A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, 
 └─────────────────────────────────────┼───────────────────────┼───────────────┘
                                       │                       │
                                enqueue│              subscribe│
-                                      ▼                       │
-┌─────────────────────────────────────────────────────────────┼───────────────┐
-│                          Redis                              │               │
-│                                                             │               │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐               │
-│  │   Queue     │  │   Pub/Sub    │  │       Cache           │               │
-│  │ (BullMQ)    │  │              │  │ (batch list, 30s TTL) │               │
-│  │             │  │  channel:    │  │                       │               │
-│  │  wait queue │  │  batch-events│  │                       │               │
-│  │  active set │  │              │  │                       │               │
-│  └──────┬──────┘  └───────▲──────┘  └───────────────────────┘               │
-└─────────┼─────────────────┼─────────────────────────────────────────────────┘
+                                      ▼                       ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          Redis                                             │
+│                                                                            │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐              │
+│  │   Queue     │  │   Pub/Sub    │  │       Cache           │              │
+│  │ (BullMQ)    │  │              │  │ (batch list, 30s TTL) │              │
+│  │             │  │  channel:    │  │                       │              │
+│  │  wait queue │  │  batch-events│  │                       │              │
+│  │  active set │  │              │  │                       │              │
+│  └──────┬──────┘  └───────▲──────┘  └───────────────────────┘              │
+└─────────┼─────────────────┼────────────────────────────────────────────────┘
           │                 │ publish
           │ pick up         │
           ▼                 │
@@ -169,6 +169,7 @@ User                    API                     Redis                   Worker  
 | ORM | Prisma v8 (`@prisma/orm-postgres`) | Type-safe database access |
 | Queue | Redis 7 + BullMQ | Job queuing with retries |
 | Cache | Redis (ioredis) | Batch list caching |
+| Shared | `@repo/shared` | Types shared across API, worker, and frontend |
 | Infra | Docker, Turborepo | Containerization, monorepo |
 
 ---
@@ -198,7 +199,8 @@ bulk-url-checker/
 │               ├── page.tsx            # Server-side data fetch
 │               └── BatchClient.tsx     # SSE + interactive UI
 ├── packages/
-│   └── db/                     # Prisma v8 ORM + contract schema
+│   ├── db/                     # Prisma v8 ORM + contract schema
+│   └── shared/                 # Shared types (Batch, BatchUrl, statuses, events)
 ├── docker/                     # Dockerfiles (api, worker, web)
 ├── docker-compose.yml          # Development compose
 ├── docker-compose.prod.yml     # Production compose (3 worker replicas)

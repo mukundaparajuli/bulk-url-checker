@@ -1,11 +1,7 @@
 import * as cheerio from "cheerio";
+import type { CheckResult } from "@repo/shared";
 
-export interface CheckResult {
-  status: number;
-  responseTimeMs: number;
-  pageTitle: string | null;
-  finalUrl: string;
-}
+export type { CheckResult } from "@repo/shared";
 
 export class HttpError extends Error {
   constructor(

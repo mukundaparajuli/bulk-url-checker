@@ -9,12 +9,14 @@
   "dependencies": {
     "@fastify/cors": "^11.3.0",
     "@repo/db": "*",
+    "@repo/shared": "*",
     "bullmq": "^6.3.1",
     "fastify": "^5.12.1",
     "ioredis": "^6.0.0",
     "zod": "^4.5.1"
   },
   "devDependencies": {
+    "@repo/typescript-config": "*",
     "@types/node": "^26.3.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
