@@ -58,20 +58,21 @@ A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, 
                                       │                       │
                                enqueue│              subscribe│
                                       ▼                       ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                          Redis                                             │
-│                                                                            │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐              │
-│  │   Queue     │  │   Pub/Sub    │  │       Cache           │              │
-│  │ (BullMQ)    │  │              │  │ (batch list, 30s TTL) │              │
-│  │             │  │  channel:    │  │                       │              │
-│  │  wait queue │  │  batch-events│  │                       │              │
-│  │  active set │  │              │  │                       │              │
-│  └──────┬──────┘  └───────▲──────┘  └───────────────────────┘              │
-└─────────┼─────────────────┼────────────────────────────────────────────────┘
-          │                 │ publish
-          │ pick up         │
-          ▼                 │
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                                  Redis                                            │
+│                                                                                   │
+│  ┌─────────────┐  ┌────────────────────┐  ┌────────────────┐  ┌───────────────┐   │
+│  │   Queue     │  │   Pub/Sub          │  │     Cache      │  │ Rate Limiter  │   │
+│  │ (BullMQ)    │  │                    │  │ (batch list,   │  │ (sliding      │   │
+│  │             │  │  channels:         │  │  30s TTL)      │  │  window,      │   │
+│  │  wait queue │  │  - batch-events    │  │                │  │  10 req/s)    │   │
+│  │  active set │  │                    │  │                │  │               │   │
+│  └──────┬──────┘  │  - cache-invalid.  │  └────────────────┘  └───────┬───────┘   │
+│         │         └────────────────────┘                              │           │
+└─────────┼─────────────────────────────────────────────────────────────┼───────────┘
+          │                        ▲                                    │
+          │ pick up                │ publish                 check      │
+          ▼                        │                                    │
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Worker × N  (BullMQ)                              │
 │                                                                             │
@@ -79,13 +80,14 @@ A full-stack monorepo for bulk-checking URL health. Paste URLs or upload a CSV, 
 │  │  processCheckUrl(job)                                                 │  │
 │  │                                                                       │  │
 │  │  1. Check batch not cancelled                                         │  │
-│  │  2. Mark url PROCESSING                                               │  │
-│  │  3. fetch(url, { timeout: 10s }) → { status, responseTime, title }    │  │
-│  │  4. Mark url SUCCESS or FAILED (retry 3x, exponential backoff)        │  │
-│  │  5. Update batch progress (recount all url statuses)                  │  │
-│  │  6. Publish event to Redis Pub/Sub                                    │  │
+│  │  2. Check rate limit (Redis sliding window, 10/sec global)            │  │
+│  │  3. Mark url PROCESSING                                               │  │
+│  │  4. fetch(url, { timeout: 10s }) → { status, responseTime, title }    │  │
+│  │  5. Mark url SUCCESS or FAILED (retry 3x, exponential backoff)        │  │
+│  │  6. Update batch progress (recount all url statuses)                  │  │
+│  │  7. Publish event to Redis Pub/Sub                                    │  │
 │  │                                                                       │  │
-│  │  concurrency: 5  ·  rate limit: 10 jobs/sec  ·  attempts: 3           │  │
+│  │  concurrency: 5/worker · rate limit: 10/sec global · attempts: 3      │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────┬──────────────────────────────────┘
                                            │
@@ -135,25 +137,28 @@ User                    API                     Redis                   Worker  
  │                       │                       │  5. worker picks job  │                       │
  │                       │                       ├──────────────────────▶│                       │
  │                       │                       │                       │                       │
- │                       │                       │                       │  6. UPDATE url status │
- │                       │                       │                       ├──────────────────────▶│
- │                       │                       │                       │                       │
- │                       │                       │  7. publish event     │                       │
+ │                       │                       │  6. check rate limit  │                       │
  │                       │                       │◀──────────────────────┤                       │
  │                       │                       │                       │                       │
- │  8. SSE event         │                       │                       │                       │
+ │                       │                       │                       │  7. UPDATE url status │
+ │                       │                       │                       ├──────────────────────▶│
+ │                       │                       │                       │                       │
+ │                       │                       │  8. publish event     │                       │
+ │                       │                       │◀──────────────────────┤                       │
+ │                       │                       │                       │                       │
+ │  9. SSE event         │                       │                       │                       │
  │  (via subscriber)     │                       │                       │                       │
  │◀──────────────────────┤◀──────────────────────┤                       │                       │
  │                       │                       │                       │                       │
- │  9. GET /batches/:id  │                       │                       │                       │
+ │  10. GET /batches/:id │                       │                       │                       │
  ├──────────────────────▶│                       │                       │                       │
- │                       │  10. SELECT batch     │                       │                       │
+ │                       │  11. SELECT batch     │                       │                       │
  │                       ├──────────────────────────────────────────────────────────────────────▶│
  │                       │                       │                       │                       │
- │  11. batch + urls     │                       │                       │                       │
+ │  12. batch + urls     │                       │                       │                       │
  │◀──────────────────────┤                       │                       │                       │
  │                       │                       │                       │                       │
-```
+ ```
 
 ---
 
@@ -373,16 +378,21 @@ PENDING → QUEUED → PROCESSING → SUCCESS
 
 ## Rate Limiting
 
-BullMQ worker-level rate limiter:
+Global rate limit: **10 requests/second across the entire system**, enforced via Redis sliding window.
 
 ```typescript
-limiter: {
-  max: 10,        // max 10 jobs
-  duration: 1000, // per 1 second
-}
+// apps/worker/src/services/rate-limiter.service.ts
+const RATE_LIMIT_KEY = "rate-limit:url-checks";
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 1000;
+
+// Sliding window using Redis sorted sets
+pipeline.zremrangebyscore(KEY, 0, windowStart);  // Remove expired entries
+pipeline.zadd(KEY, now, uniqueId);                // Add current request
+pipeline.zcard(KEY);                              // Count requests in window
 ```
 
-This prevents overwhelming target servers. Each worker processes up to 10 URLs/second. With 3 workers, the system handles up to 30 URLs/second.
+All workers share the same Redis key, so the limit is global regardless of how many workers are running. Before processing each URL, the worker checks `acquireRateLimit()` — if the window is full, it throws and BullMQ retries with backoff.
 
 ---
 
