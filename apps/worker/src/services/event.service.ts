@@ -8,3 +8,7 @@ export async function publishBatchEvent(batchId: string) {
   const event: BatchUpdatedEvent = { type: "batch.updated", batchId };
   await redis.publish("batch-events", JSON.stringify(event));
 }
+
+export async function publishCacheInvalidation() {
+  await redis.publish("cache-invalidation", JSON.stringify({ type: "batches" }));
+}

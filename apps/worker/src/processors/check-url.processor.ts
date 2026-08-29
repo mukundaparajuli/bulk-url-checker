@@ -10,6 +10,7 @@ import {
   updateBatchProgress,
 } from "../services/batch-state.service";
 import { publishBatchEvent } from "../services/event.service";
+import { acquireRateLimit, getDelayMs } from "../services/rate-limiter.service";
 
 export async function processCheckUrl(job: Job) {
   const { batchId, batchUrlId, url } = job.data;
@@ -23,10 +24,21 @@ export async function processCheckUrl(job: Job) {
 
   if (batch.status === "CANCELLED") {
     await markCancelled(batchUrlId);
+    await updateBatchProgress(batchId);
+    await publishBatchEvent(batchId);
     return;
   }
 
   if (["SUCCESS", "FAILED", "CANCELLED"].includes(item.status)) return;
+
+  const delayMs = await getDelayMs();
+  if (delayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  if (!(await acquireRateLimit())) {
+    throw new Error("Rate limited");
+  }
 
   await markProcessing(batchUrlId);
 
@@ -35,6 +47,8 @@ export async function processCheckUrl(job: Job) {
 
     if (await isBatchCancelled(batchId)) {
       await markCancelled(batchUrlId);
+      await updateBatchProgress(batchId);
+      await publishBatchEvent(batchId);
       return;
     }
 

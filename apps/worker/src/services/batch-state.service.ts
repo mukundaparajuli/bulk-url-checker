@@ -1,5 +1,6 @@
 import { Batch, BatchUrl } from "@repo/db";
 import type { CheckResult } from "@repo/shared";
+import { publishCacheInvalidation } from "./event.service";
 
 export async function markProcessing(batchUrlId: string) {
   await BatchUrl.where({ id: batchUrlId, status: "PENDING" }).updateAll({
@@ -83,4 +84,6 @@ export async function updateBatchProgress(batchId: string) {
     ...counts,
     status,
   });
+
+  await publishCacheInvalidation();
 }

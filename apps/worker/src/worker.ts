@@ -14,10 +14,6 @@ const worker = new Worker(
       port: Number(new URL(env.redisUrl).port),
     },
     concurrency: 5,
-    limiter: {
-      max: 10,
-      duration: 1000,
-    },
   }
 );
 

@@ -2,16 +2,23 @@ import Redis from "ioredis";
 import { FastifyReply } from "fastify";
 import type { BatchUpdatedEvent } from "@repo/shared";
 import { env } from "../config/env";
+import { invalidateBatchCache } from "./cache.service";
 
 const clients = new Map<string, Set<FastifyReply>>();
 
 const subscriber = new Redis(env.redisUrl);
 
-subscriber.subscribe("batch-events");
+subscriber.subscribe("batch-events", "cache-invalidation");
 
 subscriber.on("message", (_channel, message) => {
   try {
-    const event: BatchUpdatedEvent = JSON.parse(message);
+    const event = JSON.parse(message);
+    
+    if (_channel === "cache-invalidation" && event.type === "batches") {
+      invalidateBatchCache().catch(() => {});
+      return;
+    }
+    
     if (event.type === "batch.updated" && event.batchId) {
       const set = clients.get(event.batchId);
       if (set) {

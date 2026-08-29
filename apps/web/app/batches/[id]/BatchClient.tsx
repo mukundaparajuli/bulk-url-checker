@@ -266,7 +266,10 @@ export default function BatchClient({
   useEffect(() => {
     const source = new EventSource(batchEventsUrl(batchId));
 
-    source.onopen = () => setSseConnected(true);
+    source.onopen = () => {
+      setSseConnected(true);
+      fetchLatest();
+    };
 
     source.onmessage = () => {
       fetchLatest();
