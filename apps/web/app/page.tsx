@@ -101,7 +101,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { message: messageApi } = App.useApp();
+  const { message } = App.useApp();
 
   const parsedUrls = parseUrls(urls);
   const urlCount = parsedUrls.length;
@@ -124,9 +124,9 @@ export default function Home() {
         const current = urls.trim();
         const newUrls = current ? current + "\n" + extracted.join("\n") : extracted.join("\n");
         setUrls(newUrls);
-        messageApi.success(`Added ${extracted.length} URL${extracted.length !== 1 ? "s" : ""}`);
+        message.success(`Added ${extracted.length} URL${extracted.length !== 1 ? "s" : ""}`);
       } else {
-        messageApi.warning("No valid URLs found in file");
+        message.warning("No valid URLs found in file");
       }
     };
     reader.readAsText(file);
@@ -155,7 +155,7 @@ export default function Home() {
       router.push(`/batches/${id}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create batch";
-      messageApi.error(msg);
+      message.error(msg);
     } finally {
       setLoading(false);
     }

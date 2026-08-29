@@ -134,14 +134,14 @@ const columns: ColumnsType<Batch> = [
 function BatchesContent() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
-  const { message: messageApi } = App.useApp();
+  const { message } = App.useApp();
 
   useEffect(() => {
     getBatches()
       .then(setBatches)
-      .catch(() => messageApi.error("Failed to load batches"))
+      .catch(() => message.error("Failed to load batches"))
       .finally(() => setLoading(false));
-  }, [messageApi]);
+  }, [message]);
 
   return (
     <>

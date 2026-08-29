@@ -228,6 +228,9 @@ npm install
 # Start infrastructure
 docker compose up -d postgres redis
 
+# Create database
+psql -U postgres -d postgres -c "CREATE DATABASE urlchecker;"
+
 # Set up environment
 cp .env.example .env
 cp .env.example apps/api/.env
@@ -235,7 +238,8 @@ cp .env.example apps/worker/.env
 
 # Set up database
 cd packages/db
-npx prisma db update --confirm urlchecker
+source ../.env
+npx prisma db update --confirm urlchecker --db "$DATABASE_URL"
 cd ../..
 
 # Start all services (API + Worker + Web)
