@@ -1,5 +1,11 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { createBatch, getBatches, getBatchById } from "../services/batch.service";
+import {
+  createBatch,
+  getBatches,
+  getBatchById,
+  cancelBatch,
+  retryFailedUrls,
+} from "../services/batch.service";
 
 export async function createBatchController(request: FastifyRequest, reply: FastifyReply) {
   const { urls } = request.body as { urls: string[] };
@@ -19,4 +25,16 @@ export async function getBatchByIdController(request: FastifyRequest, _reply: Fa
     throw new Error("Batch not found");
   }
   return batch;
+}
+
+export async function cancelBatchController(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const batch = await cancelBatch(id);
+  return { status: batch.status };
+}
+
+export async function retryFailedController(request: FastifyRequest, _reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const result = await retryFailedUrls(id);
+  return result;
 }

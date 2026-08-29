@@ -35,23 +35,19 @@ function isRetryableError(error: unknown): boolean {
 export async function processCheckUrl(job: Job) {
   const { batchId, batchUrlId, url } = job.data;
 
-  const item = await (db as any).batchUrl.findUnique({
-    where: { id: batchUrlId },
-  });
+  const [item, batch] = await Promise.all([
+    (db as any).batchUrl.findUnique({ where: { id: batchUrlId } }),
+    (db as any).batch.findUnique({ where: { id: batchId }, select: { status: true } }),
+  ]);
 
-  if (!item) return;
+  if (!item || !batch) return;
 
-  if (["SUCCESS", "FAILED", "CANCELLED"].includes(item.status)) return;
-
-  const batch = await (db as any).batch.findUnique({
-    where: { id: batchId },
-    select: { status: true },
-  });
-
-  if (batch?.status === "CANCELLED") {
+  if (batch.status === "CANCELLED") {
     await markCancelled(batchUrlId);
     return;
   }
+
+  if (["SUCCESS", "FAILED", "CANCELLED"].includes(item.status)) return;
 
   await markProcessing(batchUrlId);
 
