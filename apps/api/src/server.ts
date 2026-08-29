@@ -1,9 +1,16 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import { batchRoutes } from "./routes/batch.routes";
 import { prismaPlugin } from "./plugins/prisma";
 
 const app = Fastify({
   logger: true,
+});
+
+app.register(cors, {
+  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
 });
 
 app.register(prismaPlugin);

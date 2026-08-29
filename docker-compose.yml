@@ -43,6 +43,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/urlchecker
       REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:3000
     restart: unless-stopped
     command: node dist/server.js
 

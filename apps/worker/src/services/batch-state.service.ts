@@ -1,95 +1,90 @@
-import { db } from "@repo/db";
+import { Batch, BatchUrl } from "@repo/db";
 
 export async function markProcessing(batchUrlId: string) {
-  await (db as any).batchUrl.updateMany({
-    where: {
-      id: batchUrlId,
-      status: { in: ["PENDING", "QUEUED"] },
-    },
-    data: { status: "PROCESSING", attempts: { increment: 1 } },
+  await BatchUrl.where({ id: batchUrlId, status: "PENDING" }).updateAll({
+    status: "PROCESSING",
+  });
+  await BatchUrl.where({ id: batchUrlId, status: "QUEUED" }).updateAll({
+    status: "PROCESSING",
   });
 }
 
-export async function markSuccess(batchUrlId: string, result: {
-  status: number;
-  responseTimeMs: number;
-  pageTitle: string | null;
-  finalUrl: string;
-}) {
-  await (db as any).batchUrl.updateMany({
-    where: {
-      id: batchUrlId,
-      status: { in: ["PENDING", "QUEUED", "PROCESSING"] },
-    },
-    data: {
-      status: "SUCCESS",
-      httpStatus: result.status,
-      responseTimeMs: result.responseTimeMs,
-      pageTitle: result.pageTitle,
-      error: null,
-    },
+export async function markSuccess(
+  batchUrlId: string,
+  result: {
+    status: number;
+    responseTimeMs: number;
+    pageTitle: string | null;
+    finalUrl: string;
+  }
+) {
+  const item = await BatchUrl.where({ id: batchUrlId }).first();
+  if (!item) return;
+  if (item.status === "SUCCESS" || item.status === "FAILED" || item.status === "CANCELLED") return;
+
+  await BatchUrl.where({ id: batchUrlId }).update({
+    status: "SUCCESS",
+    httpStatus: result.status,
+    responseTimeMs: result.responseTimeMs,
+    pageTitle: result.pageTitle,
+    error: null,
   });
 }
 
 export async function markFailed(batchUrlId: string, error: string) {
-  await (db as any).batchUrl.updateMany({
-    where: {
-      id: batchUrlId,
-      status: { in: ["PENDING", "QUEUED", "PROCESSING"] },
-    },
-    data: { status: "FAILED", error },
+  const item = await BatchUrl.where({ id: batchUrlId }).first();
+  if (!item) return;
+  if (item.status === "SUCCESS" || item.status === "FAILED" || item.status === "CANCELLED") return;
+
+  await BatchUrl.where({ id: batchUrlId }).update({
+    status: "FAILED",
+    error,
   });
 }
 
 export async function markCancelled(batchUrlId: string) {
-  await (db as any).batchUrl.updateMany({
-    where: {
-      id: batchUrlId,
-      status: { in: ["PENDING", "QUEUED", "PROCESSING"] },
-    },
-    data: { status: "CANCELLED" },
+  const item = await BatchUrl.where({ id: batchUrlId }).first();
+  if (!item) return;
+  if (item.status === "SUCCESS" || item.status === "FAILED" || item.status === "CANCELLED") return;
+
+  await BatchUrl.where({ id: batchUrlId }).update({
+    status: "CANCELLED",
   });
 }
 
 export async function isBatchCancelled(batchId: string) {
-  const batch = await (db as any).batch.findUnique({
-    where: { id: batchId },
-    select: { status: true },
-  });
+  const batch = await Batch.where({ id: batchId }).select("status").first();
   return batch?.status === "CANCELLED";
 }
 
 export async function updateBatchProgress(batchId: string) {
-  const groups = await (db as any).batchUrl.groupBy({
-    by: ["status"],
-    where: { batchId },
-    _count: { _all: true },
-  });
+  const urls = await BatchUrl.where({ batchId }).select("status").all();
 
   const counts = {
-    totalUrls: 0,
+    totalUrls: urls.length,
     completedUrls: 0,
     failedUrls: 0,
     cancelledUrls: 0,
   };
 
-  for (const g of groups) {
-    counts.totalUrls += g._count._all;
-    if (g.status === "SUCCESS") counts.completedUrls += g._count._all;
-    if (g.status === "FAILED") counts.failedUrls += g._count._all;
-    if (g.status === "CANCELLED") counts.cancelledUrls += g._count._all;
+  for (const u of urls) {
+    if (u.status === "SUCCESS") counts.completedUrls++;
+    if (u.status === "FAILED") counts.failedUrls++;
+    if (u.status === "CANCELLED") counts.cancelledUrls++;
   }
 
-  let status: "RUNNING" | "COMPLETED" | "FAILED" = "RUNNING";
-  if (counts.completedUrls + counts.failedUrls + counts.cancelledUrls === counts.totalUrls) {
-    status = counts.failedUrls > 0 ? "FAILED" : "COMPLETED";
-  }
+  const allDone =
+    counts.completedUrls + counts.failedUrls + counts.cancelledUrls ===
+    counts.totalUrls;
 
-  await (db as any).batch.update({
-    where: { id: batchId },
-    data: {
-      ...counts,
-      status,
-    },
+  const status: "RUNNING" | "COMPLETED" | "FAILED" = allDone
+    ? counts.failedUrls > 0
+      ? "FAILED"
+      : "COMPLETED"
+    : "RUNNING";
+
+  await Batch.where({ id: batchId }).update({
+    ...counts,
+    status,
   });
 }

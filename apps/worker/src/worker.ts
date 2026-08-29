@@ -1,6 +1,9 @@
 import { Worker } from "bullmq";
 import { processCheckUrl } from "./processors/check-url.processor";
 import { env } from "./config/env";
+import { db } from "@repo/db";
+
+db.connect({ url: env.databaseUrl });
 
 const worker = new Worker(
   "url-checks",

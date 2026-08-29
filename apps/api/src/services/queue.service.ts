@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { db } from "@repo/db";
+import { BatchUrl } from "@repo/db";
 import { env } from "../config/env";
 
 export const urlQueue = new Queue("url-checks", {
@@ -10,10 +10,7 @@ export const urlQueue = new Queue("url-checks", {
 });
 
 export async function enqueueBatch(batchId: string) {
-  const urls = await (db as any).batchUrl.findMany({
-    where: { batchId },
-    select: { id: true, url: true },
-  });
+  const urls = await BatchUrl.where({ batchId }).select("id", "url").all();
 
   for (const item of urls) {
     await urlQueue.add(
@@ -24,7 +21,7 @@ export async function enqueueBatch(batchId: string) {
         url: item.url,
       },
       {
-        jobId: `check-url:${item.id}`,
+        jobId: `check-url-${item.id}`,
         attempts: 3,
         backoff: {
           type: "exponential",

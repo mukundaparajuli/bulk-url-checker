@@ -4,6 +4,7 @@ enum BatchStatus {
   PENDING
   RUNNING
   COMPLETED
+  FAILED
   CANCELLED
 }
 

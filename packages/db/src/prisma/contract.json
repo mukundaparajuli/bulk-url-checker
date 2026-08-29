@@ -33,6 +33,10 @@
                 "value": "COMPLETED"
               },
               {
+                "name": "FAILED",
+                "value": "FAILED"
+              },
+              {
                 "name": "CANCELLED",
                 "value": "CANCELLED"
               }
@@ -337,8 +341,8 @@
             "batch": {
               "checks": [
                 {
-                  "expression": "\"status\" IN ('PENDING', 'RUNNING', 'COMPLETED', 'CANCELLED')",
-                  "name": "batch_status_check_e6e56365",
+                  "expression": "\"status\" IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED')",
+                  "name": "batch_status_check_4cbea06c",
                   "prefix": "batch_status_check"
                 }
               ],
@@ -568,6 +572,7 @@
                 "PENDING",
                 "RUNNING",
                 "COMPLETED",
+                "FAILED",
                 "CANCELLED"
               ]
             },
@@ -588,7 +593,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "395b3a584f8e4ee3db648114a79aa9d66b76922903884d6f9ee823b0122cf16b"
+    "storageHash": "e588f96c5ee17d55bdb4a3298d0e65084cf800400bcbd1d6f1189ec4d858141c"
   },
   "execution": {
     "executionHash": "be8bb04b66e720c5e9ac762b105ace21e572766fe4c72f197135bedae069c181",

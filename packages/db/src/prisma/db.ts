@@ -9,3 +9,6 @@ export const db = postgres<Contract>({
   contractJson,
   url: process.env['DATABASE_URL']!,
 });
+
+export const Batch = db.orm.public.Batch;
+export const BatchUrl = db.orm.public.BatchUrl;

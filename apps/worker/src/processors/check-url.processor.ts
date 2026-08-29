@@ -1,5 +1,5 @@
 import { Job } from "bullmq";
-import { db } from "@repo/db";
+import { Batch, BatchUrl } from "@repo/db";
 import { checkUrl, HttpError } from "../services/url-checker.service";
 import {
   markProcessing,
@@ -11,33 +11,12 @@ import {
 } from "../services/batch-state.service";
 import { publishBatchEvent } from "../services/event.service";
 
-function isRetryableError(error: unknown): boolean {
-  if (error instanceof HttpError) {
-    return error.statusCode >= 500;
-  }
-  if (error instanceof TypeError) {
-    return true;
-  }
-  if (error instanceof DOMException && error.name === "TimeoutError") {
-    return true;
-  }
-  if (error instanceof Error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes("econnrefused")) return true;
-    if (msg.includes("econnreset")) return true;
-    if (msg.includes("enotfound")) return true;
-    if (msg.includes("socket hang up")) return true;
-    if (msg.includes("network")) return true;
-  }
-  return false;
-}
-
 export async function processCheckUrl(job: Job) {
   const { batchId, batchUrlId, url } = job.data;
 
   const [item, batch] = await Promise.all([
-    (db as any).batchUrl.findUnique({ where: { id: batchUrlId } }),
-    (db as any).batch.findUnique({ where: { id: batchId }, select: { status: true } }),
+    BatchUrl.where({ id: batchUrlId }).first(),
+    Batch.where({ id: batchId }).select("status").first(),
   ]);
 
   if (!item || !batch) return;
@@ -63,19 +42,15 @@ export async function processCheckUrl(job: Job) {
     await updateBatchProgress(batchId);
     await publishBatchEvent(batchId);
   } catch (error) {
-    if (isRetryableError(error)) {
-      throw error;
-    }
-
     const isFinalAttempt =
-      job.attemptsMade >= (job.opts.attempts ?? 3);
+      job.attemptsMade >= (job.opts.attempts ?? 3) - 1;
 
-    if (!isFinalAttempt) {
+    if (isFinalAttempt) {
+      await markFailed(batchUrlId, String(error));
+      await updateBatchProgress(batchId);
+      await publishBatchEvent(batchId);
+    } else {
       throw error;
     }
-
-    await markFailed(batchUrlId, String(error));
-    await updateBatchProgress(batchId);
-    await publishBatchEvent(batchId);
   }
 }

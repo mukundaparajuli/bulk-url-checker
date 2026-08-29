@@ -1,40 +1,38 @@
-import { db } from "@repo/db";
+import { Batch, BatchUrl } from "@repo/db";
+import type { Contract } from "@repo/db/src/prisma/contract";
 import { enqueueBatch, urlQueue } from "./queue.service";
 import { getCachedBatches, setCachedBatches, invalidateBatchCache } from "./cache.service";
 
+type BatchModel = ReturnType<typeof Batch.where> extends infer Q ? Q : never;
+
 export async function createBatch(urls: string[]) {
-  const batch = await db.transaction(async (tx) => {
-    const created = await (tx as any).batch.create({
-      data: {
-        status: "PENDING",
-        totalUrls: urls.length,
-        completedUrls: 0,
-        failedUrls: 0,
-        cancelledUrls: 0,
-        urls: {
-          create: urls.map((url) => ({
-            url,
-            status: "PENDING" as const,
-          })),
-        },
-      },
-    });
-    return created;
+  const created = await (Batch as any).create({
+    status: "PENDING",
+    totalUrls: urls.length,
+    completedUrls: 0,
+    failedUrls: 0,
+    cancelledUrls: 0,
   });
 
-  await enqueueBatch(batch.id);
+  await (BatchUrl as any).createAll(
+    urls.map((url: string) => ({
+      batchId: created.id,
+      url,
+      status: "PENDING",
+    }))
+  );
+
+  await enqueueBatch(created.id);
   await invalidateBatchCache();
 
-  return batch;
+  return created;
 }
 
 export async function getBatches() {
   const cached = await getCachedBatches();
   if (cached) return cached;
 
-  const batches = await (db as any).batch.findMany({
-    orderBy: { createdAt: "desc" },
-  });
+  const batches = await (Batch as any).orderBy((m: any) => m.createdAt.desc()).all();
 
   await setCachedBatches(batches);
 
@@ -42,17 +40,11 @@ export async function getBatches() {
 }
 
 export async function getBatchById(id: string) {
-  return await (db as any).batch.findUnique({
-    where: { id },
-    include: { urls: true },
-  });
+  return await (Batch as any).where({ id }).include("urls").first();
 }
 
 export async function cancelBatch(id: string) {
-  const batch = await (db as any).batch.findUnique({
-    where: { id },
-    select: { status: true },
-  });
+  const batch = await (Batch as any).where({ id }).select("status").first();
 
   if (!batch) {
     throw new Error("Batch not found");
@@ -62,30 +54,22 @@ export async function cancelBatch(id: string) {
     return batch;
   }
 
-  await (db as any).batch.update({
-    where: { id },
-    data: { status: "CANCELLED" },
-  });
+  await (Batch as any).where({ id }).update({ status: "CANCELLED" });
 
-  const pendingUrls = await (db as any).batchUrl.findMany({
-    where: {
-      batchId: id,
-      status: { in: ["PENDING", "QUEUED"] },
-    },
-    select: { id: true },
-  });
+  const pendingUrls = await (BatchUrl as any).where({
+    batchId: id,
+  }).select("id", "status").all();
 
-  for (const url of pendingUrls) {
-    await urlQueue.remove(`check-url:${url.id}`);
+  const toCancel = pendingUrls.filter(
+    (u: any) => u.status === "PENDING" || u.status === "QUEUED"
+  );
+
+  for (const url of toCancel) {
+    await urlQueue.remove(`check-url-${url.id}`);
   }
 
-  await (db as any).batchUrl.updateMany({
-    where: {
-      batchId: id,
-      status: { in: ["PENDING", "QUEUED"] },
-    },
-    data: { status: "CANCELLED" },
-  });
+  await (BatchUrl as any).where({ batchId: id, status: "PENDING" }).updateAll({ status: "CANCELLED" });
+  await (BatchUrl as any).where({ batchId: id, status: "QUEUED" }).updateAll({ status: "CANCELLED" });
 
   await invalidateBatchCache();
 
@@ -93,39 +77,27 @@ export async function cancelBatch(id: string) {
 }
 
 export async function retryFailedUrls(id: string) {
-  const batch = await (db as any).batch.findUnique({
-    where: { id },
-    select: { status: true },
-  });
+  const batch = await (Batch as any).where({ id }).select("status").first();
 
   if (!batch) {
     throw new Error("Batch not found");
   }
 
-  const failedUrls = await (db as any).batchUrl.findMany({
-    where: {
-      batchId: id,
-      status: "FAILED",
-    },
-    select: { id: true, url: true },
-  });
+  const failedUrls = await (BatchUrl as any).where({
+    batchId: id,
+    status: "FAILED",
+  }).select("id", "url").all();
 
   if (failedUrls.length === 0) {
     return { retried: 0 };
   }
 
-  await (db as any).batchUrl.updateMany({
-    where: {
-      batchId: id,
-      status: "FAILED",
-    },
-    data: { status: "QUEUED", error: null },
+  await (BatchUrl as any).where({ batchId: id, status: "FAILED" }).updateAll({
+    status: "QUEUED",
+    error: null,
   });
 
-  await (db as any).batch.update({
-    where: { id },
-    data: { status: "RUNNING" },
-  });
+  await (Batch as any).where({ id }).update({ status: "RUNNING" });
 
   for (const item of failedUrls) {
     await urlQueue.add(
@@ -136,7 +108,7 @@ export async function retryFailedUrls(id: string) {
         url: item.url,
       },
       {
-        jobId: `check-url:${item.id}`,
+        jobId: `check-url-${item.id}`,
         attempts: 3,
         backoff: {
           type: "exponential",
