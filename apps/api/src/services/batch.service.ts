@@ -1,9 +1,6 @@
 import { Batch, BatchUrl } from "@repo/db";
-import type { Contract } from "@repo/db/src/prisma/contract";
 import { enqueueBatch, urlQueue } from "./queue.service";
 import { getCachedBatches, setCachedBatches, invalidateBatchCache } from "./cache.service";
-
-type BatchModel = ReturnType<typeof Batch.where> extends infer Q ? Q : never;
 
 export async function createBatch(urls: string[]) {
   const created = await (Batch as any).create({

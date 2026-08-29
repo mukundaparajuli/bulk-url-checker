@@ -1,6 +1,6 @@
 import { Job } from "bullmq";
 import { Batch, BatchUrl } from "@repo/db";
-import { checkUrl, HttpError } from "../services/url-checker.service";
+import { checkUrl } from "../services/url-checker.service";
 import {
   markProcessing,
   markSuccess,

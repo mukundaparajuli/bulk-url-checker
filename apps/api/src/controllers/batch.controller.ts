@@ -7,9 +7,25 @@ import {
   retryFailedUrls,
 } from "../services/batch.service";
 import { addClient, removeClient } from "../services/pubsub.service";
+import { env } from "../config/env";
 
 export async function createBatchController(request: FastifyRequest, reply: FastifyReply) {
   const { urls } = request.body as { urls: string[] };
+
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return reply.code(400).send({ error: "urls must be a non-empty array" });
+  }
+
+  if (urls.length > 1000) {
+    return reply.code(400).send({ error: "Maximum 1000 URLs per batch" });
+  }
+
+  for (const url of urls) {
+    if (typeof url !== "string" || url.length === 0) {
+      return reply.code(400).send({ error: "Each URL must be a non-empty string" });
+    }
+  }
+
   const batch = await createBatch(urls);
   return reply.code(201).send({ id: batch.id });
 }
@@ -47,7 +63,7 @@ export async function batchEventsController(request: FastifyRequest, reply: Fast
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     Connection: "keep-alive",
-    "Access-Control-Allow-Origin": process.env.CORS_ORIGIN || "http://localhost:3000",
+    "Access-Control-Allow-Origin": env.corsOrigin,
     "Access-Control-Allow-Credentials": "true",
   });
 
