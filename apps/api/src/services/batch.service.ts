@@ -100,6 +100,8 @@ export async function retryFailedUrls(id: string) {
   await (Batch as any).where({ id }).update({ status: "RUNNING" });
 
   for (const item of failedUrls) {
+    const jobId = `check-url-${item.id}`;
+    await urlQueue.remove(jobId).catch(() => {});
     await urlQueue.add(
       "check-url",
       {
@@ -108,7 +110,7 @@ export async function retryFailedUrls(id: string) {
         url: item.url,
       },
       {
-        jobId: `check-url-${item.id}`,
+        jobId,
         attempts: 3,
         backoff: {
           type: "exponential",

@@ -53,6 +53,27 @@ const batchStatusColors: Record<string, string> = {
   CANCELLED: "#a3a3a3",
 };
 
+function downloadCsv(data: BatchDetail) {
+  const headers = ["url", "status", "httpStatus", "responseTimeMs", "pageTitle", "error"];
+  const rows = data.urls.map((u) =>
+    headers
+      .map((h) => {
+        const val = u[h as keyof BatchUrl];
+        const str = val == null ? "" : String(val);
+        return `"${str.replace(/"/g, '""')}"`;
+      })
+      .join(",")
+  );
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `batch-${data.id.slice(0, 8)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function ProgressBar({
   completed,
   total,
@@ -63,6 +84,7 @@ function ProgressBar({
   status: string;
 }) {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const isActive = status === "RUNNING" || status === "PENDING";
   return (
     <div>
       <div
@@ -81,8 +103,21 @@ function ProgressBar({
             width: `${pct}%`,
             background: status === "FAILED" ? "#ef4444" : "#000",
             transition: "width 0.3s ease",
+            position: "relative",
           }}
-        />
+        >
+          {isActive && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+                animation: "shimmer 1.5s infinite",
+              }}
+            />
+          )}
+        </div>
       </div>
       <div
         style={{
@@ -96,10 +131,34 @@ function ProgressBar({
         <span>
           {completed} / {total} ({pct}%)
         </span>
-        <span style={{ fontWeight: 700, textTransform: "uppercase" }}>
-          {status}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {isActive && (
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#3b82f6",
+                display: "inline-block",
+                animation: "pulse 1.5s infinite",
+              }}
+            />
+          )}
+          <span style={{ fontWeight: 700, textTransform: "uppercase" }}>
+            {status}
+          </span>
         </span>
       </div>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.8); }
+        }
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -201,6 +260,7 @@ export default function BatchClient({
   const [data, setData] = useState<BatchDetail>(initialData);
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
 
   const fetchLatest = useCallback(async () => {
     try {
@@ -214,12 +274,14 @@ export default function BatchClient({
   useEffect(() => {
     const source = new EventSource(batchEventsUrl(batchId));
 
+    source.onopen = () => setSseConnected(true);
+
     source.onmessage = () => {
       fetchLatest();
     };
 
     source.onerror = () => {
-      // EventSource reconnects automatically
+      setSseConnected(false);
     };
 
     return () => {
@@ -302,9 +364,36 @@ export default function BatchClient({
               >
                 {batchId}
               </code>
+              <div style={{ marginTop: 8, fontSize: 11, color: "#737373" }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: sseConnected ? "#22c55e" : "#ef4444",
+                    marginRight: 4,
+                    verticalAlign: "middle",
+                  }}
+                />
+                {sseConnected ? "Live" : "Reconnecting..."}
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {data.urls.length > 0 && (
+                <Button
+                  onClick={() => downloadCsv(data)}
+                  style={{
+                    border: "3px solid #000",
+                    boxShadow: "3px 3px 0 #000",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  CSV
+                </Button>
+              )}
               {isRunning && (
                 <Popconfirm
                   title="Cancel this batch?"
