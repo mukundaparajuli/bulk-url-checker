@@ -5,6 +5,7 @@ import {
   getBatchByIdController,
   cancelBatchController,
   retryFailedController,
+  batchEventsController,
 } from "../controllers/batch.controller";
 
 export async function batchRoutes(fastify: FastifyInstance) {
@@ -13,4 +14,5 @@ export async function batchRoutes(fastify: FastifyInstance) {
   fastify.get("/batches/:id", getBatchByIdController);
   fastify.post("/batches/:id/cancel", cancelBatchController);
   fastify.post("/batches/:id/retry-failed", retryFailedController);
+  fastify.get("/batches/:id/events", batchEventsController);
 }

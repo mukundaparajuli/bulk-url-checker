@@ -1,5 +1,6 @@
 import { db } from "@repo/db";
 import { enqueueBatch, urlQueue } from "./queue.service";
+import { getCachedBatches, setCachedBatches, invalidateBatchCache } from "./cache.service";
 
 export async function createBatch(urls: string[]) {
   const batch = await db.transaction(async (tx) => {
@@ -22,14 +23,22 @@ export async function createBatch(urls: string[]) {
   });
 
   await enqueueBatch(batch.id);
+  await invalidateBatchCache();
 
   return batch;
 }
 
 export async function getBatches() {
-  return await (db as any).batch.findMany({
+  const cached = await getCachedBatches();
+  if (cached) return cached;
+
+  const batches = await (db as any).batch.findMany({
     orderBy: { createdAt: "desc" },
   });
+
+  await setCachedBatches(batches);
+
+  return batches;
 }
 
 export async function getBatchById(id: string) {
@@ -77,6 +86,8 @@ export async function cancelBatch(id: string) {
     },
     data: { status: "CANCELLED" },
   });
+
+  await invalidateBatchCache();
 
   return batch;
 }
@@ -134,6 +145,8 @@ export async function retryFailedUrls(id: string) {
       }
     );
   }
+
+  await invalidateBatchCache();
 
   return { retried: failedUrls.length };
 }
