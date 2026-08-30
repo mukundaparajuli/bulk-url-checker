@@ -473,7 +473,11 @@ export default function BatchClient({
               columns={urlColumns}
               dataSource={data.urls}
               rowKey="id"
-              pagination={{ pageSize: 20 }}
+              pagination={{
+                pageSize: 20,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+              }}
               size="small"
             />
           </div>

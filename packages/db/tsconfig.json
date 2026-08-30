@@ -4,6 +4,7 @@
     "module": "preserve",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "declaration": true,
     "types": [
       "node"
     ],

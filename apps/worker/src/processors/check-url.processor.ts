@@ -10,7 +10,7 @@ import {
   updateBatchProgress,
 } from "../services/batch-state.service";
 import { publishBatchEvent } from "../services/event.service";
-import { acquireRateLimit, getDelayMs } from "../services/rate-limiter.service";
+import { getAvailableSlot } from "../services/rate-limiter.service";
 
 export async function processCheckUrl(job: Job) {
   const { batchId, batchUrlId, url } = job.data;
@@ -31,13 +31,9 @@ export async function processCheckUrl(job: Job) {
 
   if (["SUCCESS", "FAILED", "CANCELLED"].includes(item.status)) return;
 
-  const delayMs = await getDelayMs();
+  const delayMs = await getAvailableSlot();
   if (delayMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-  }
-
-  if (!(await acquireRateLimit())) {
-    throw new Error("Rate limited");
   }
 
   await markProcessing(batchUrlId);

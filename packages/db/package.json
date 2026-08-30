@@ -2,9 +2,10 @@
   "name": "@repo/db",
   "type": "module",
   "private": true,
-  "main": "./src/prisma/db.ts",
-  "types": "./src/prisma/db.ts",
+  "main": "./dist/src/prisma/db.js",
+  "types": "./dist/src/prisma/db.d.ts",
   "scripts": {
+    "build": "prisma contract emit && tsc",
     "contract:emit": "prisma contract emit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

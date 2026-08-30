@@ -58,7 +58,8 @@ function parseUrls(text: string): string[] {
 
   for (const u of candidates) {
     try {
-      const parsed = new URL(u);
+      const withProtocol = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+      const parsed = new URL(withProtocol);
       const key = parsed.href.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);

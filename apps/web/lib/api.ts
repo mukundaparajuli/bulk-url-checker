@@ -8,7 +8,10 @@ import type {
 
 export type { Batch, BatchDetail, BatchUrl } from "@repo/shared";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL =
+  typeof window === "undefined"
+    ? process.env.API_URL || "http://api:4000"
+    : process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body != null;
